@@ -38,9 +38,11 @@ router.post('/signup', async (req, res) => {
   if (exists) return res.status(409).json({ error: 'An account with that email already exists' });
 
   const hash = bcrypt.hashSync(password, 10);
-  // Only gate on verification when we can actually send the email. Otherwise
-  // auto-verify so the app stays usable until Resend is configured.
-  const mustVerify = email.isConfigured();
+  // Email verification is OFF by default and only turns on when you explicitly
+  // set REQUIRE_EMAIL_VERIFICATION=true *and* email is configured. This prevents
+  // locking out signups before you have a verified sending domain that can
+  // actually deliver the verification email.
+  const mustVerify = email.isConfigured() && process.env.REQUIRE_EMAIL_VERIFICATION === 'true';
   const token = crypto.randomUUID().replace(/-/g, '');
   const info = db
     .prepare(
