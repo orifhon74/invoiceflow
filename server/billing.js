@@ -37,4 +37,11 @@ async function createCheckoutSession(user) {
   return session.url;
 }
 
-module.exports = { isLive, createCheckoutSession, stripe, PRICE_ID, APP_URL };
+// Cancels a Stripe subscription immediately (stops future billing).
+async function cancelSubscription(subscriptionId) {
+  if (!stripeReady || !subscriptionId) return { canceled: false };
+  await stripe.subscriptions.cancel(subscriptionId);
+  return { canceled: true };
+}
+
+module.exports = { isLive, createCheckoutSession, cancelSubscription, stripe, PRICE_ID, APP_URL };

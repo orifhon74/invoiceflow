@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS users (
   currency TEXT DEFAULT 'USD',
   plan TEXT NOT NULL DEFAULT 'free',           -- 'free' | 'pro'
   stripe_customer_id TEXT DEFAULT '',
+  stripe_subscription_id TEXT DEFAULT '',
   business_logo TEXT DEFAULT '',               -- data URL, Pro only
   email_verified INTEGER NOT NULL DEFAULT 1,   -- 0 until verified (only enforced when email is configured)
   verify_token TEXT DEFAULT '',
@@ -89,6 +90,7 @@ const migrations = [
   "ALTER TABLE users ADD COLUMN verify_token TEXT DEFAULT ''",
   "ALTER TABLE users ADD COLUMN reset_token TEXT DEFAULT ''",
   "ALTER TABLE users ADD COLUMN reset_expires INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE users ADD COLUMN stripe_subscription_id TEXT DEFAULT ''",
 ];
 for (const sql of migrations) {
   try { db.exec(sql); } catch (e) { /* column already exists */ }

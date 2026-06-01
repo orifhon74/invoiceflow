@@ -31,9 +31,18 @@ router.post('/checkout', requireAuth, async (req, res) => {
   res.json({ url: '/?upgraded=1', mock: true });
 });
 
-// Downgrade (cancel) — works in both modes for local management.
-router.post('/cancel', requireAuth, (req, res) => {
-  db.prepare("UPDATE users SET plan = 'free' WHERE id = ?").run(req.user.id);
+// Downgrade (cancel). In live mode this also cancels the Stripe subscription
+// so the customer stops being billed; otherwise they'd keep getting charged.
+router.post('/cancel', requireAuth, async (req, res) => {
+  if (billing.isLive() && req.user.stripe_subscription_id) {
+    try {
+      await billing.cancelSubscription(req.user.stripe_subscription_id);
+    } catch (e) {
+      console.error('[billing] cancel error', e.message);
+      // Still downgrade locally so the user isn't stuck showing Pro.
+    }
+  }
+  db.prepare("UPDATE users SET plan = 'free', stripe_subscription_id = '' WHERE id = ?").run(req.user.id);
   res.json({ ok: true });
 });
 
@@ -55,10 +64,16 @@ function webhookHandler(req, res) {
     const session = event.data.object;
     const userId = session.metadata && session.metadata.user_id;
     if (userId) {
-      db.prepare("UPDATE users SET plan = 'pro', stripe_customer_id = ? WHERE id = ?").run(
-        session.customer || '',
-        userId
-      );
+      db.prepare(
+        "UPDATE users SET plan = 'pro', stripe_customer_id = ?, stripe_subscription_id = ? WHERE id = ?"
+      ).run(session.customer || '', session.subscription || '', userId);
+    }
+  } else if (event.type === 'customer.subscription.deleted') {
+    // Safety net: if a subscription ends for any reason (cancellation, failed
+    // payments), downgrade the matching user to free.
+    const sub = event.data.object;
+    if (sub && sub.id) {
+      db.prepare("UPDATE users SET plan = 'free', stripe_subscription_id = '' WHERE stripe_subscription_id = ?").run(sub.id);
     }
   }
   res.json({ received: true });

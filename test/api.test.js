@@ -232,6 +232,15 @@ test('pro can add a 4th+ client (limit lifted)', async () => {
   assert.strictEqual(r.status, 201);
 });
 
+test('cancel downgrades to free (and clears subscription id)', async () => {
+  const c = await call('POST', '/api/billing/cancel');
+  assert.strictEqual(c.status, 200);
+  const me = await call('GET', '/api/auth/me');
+  assert.strictEqual(me.body.user.plan, 'free');
+  // re-upgrade for any later expectations
+  await call('POST', '/api/billing/checkout');
+});
+
 test('delete invoice', async () => {
   const r = await call('DELETE', '/api/invoices/' + invoiceId);
   assert.strictEqual(r.status, 200);
