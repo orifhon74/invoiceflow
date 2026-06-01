@@ -1,0 +1,36 @@
+# Render Blueprint for InvoiceFlow.
+# Deploy: push this repo to GitHub, then on render.com choose
+# "New → Blueprint" and point it at the repo. Render reads this file.
+services:
+  - type: web
+    name: invoiceflow
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /healthz
+    # Persistent disk so the SQLite database survives restarts/redeploys.
+    disk:
+      name: invoiceflow-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: DB_PATH
+        value: /data/invoiceflow.db
+      - key: NODE_NO_WARNINGS
+        value: "1"
+      - key: APP_URL
+        sync: false        # set to your Render URL after first deploy
+      - key: JWT_SECRET
+        generateValue: true # Render generates a strong random secret
+      # Fill these in the Render dashboard when ready (optional):
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_PRICE_ID
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
