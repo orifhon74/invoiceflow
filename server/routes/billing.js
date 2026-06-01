@@ -31,18 +31,32 @@ router.post('/checkout', requireAuth, async (req, res) => {
   res.json({ url: '/?upgraded=1', mock: true });
 });
 
-// Downgrade (cancel). In live mode this also cancels the Stripe subscription
-// so the customer stops being billed; otherwise they'd keep getting charged.
+// Cancel. In live mode this schedules cancellation at the end of the current
+// paid period — the customer keeps Pro until then, and isn't billed again.
 router.post('/cancel', requireAuth, async (req, res) => {
   if (billing.isLive() && req.user.stripe_subscription_id) {
     try {
-      await billing.cancelSubscription(req.user.stripe_subscription_id);
+      const r = await billing.scheduleCancelAtPeriodEnd(req.user.stripe_subscription_id);
+      if (r.scheduled) {
+        db.prepare('UPDATE users SET cancel_at = ? WHERE id = ?').run(r.endsAt, req.user.id);
+        return res.json({ ok: true, scheduled: true, endsAt: r.endsAt });
+      }
     } catch (e) {
       console.error('[billing] cancel error', e.message);
-      // Still downgrade locally so the user isn't stuck showing Pro.
     }
   }
-  db.prepare("UPDATE users SET plan = 'free', stripe_subscription_id = '' WHERE id = ?").run(req.user.id);
+  // Mock mode or no live subscription: downgrade immediately.
+  db.prepare("UPDATE users SET plan = 'free', stripe_subscription_id = '', cancel_at = 0 WHERE id = ?").run(req.user.id);
+  res.json({ ok: true, scheduled: false });
+});
+
+// Undo a scheduled cancellation.
+router.post('/resume', requireAuth, async (req, res) => {
+  if (billing.isLive() && req.user.stripe_subscription_id) {
+    try { await billing.resumeSubscription(req.user.stripe_subscription_id); }
+    catch (e) { console.error('[billing] resume error', e.message); }
+  }
+  db.prepare('UPDATE users SET cancel_at = 0 WHERE id = ?').run(req.user.id);
   res.json({ ok: true });
 });
 
@@ -65,15 +79,15 @@ function webhookHandler(req, res) {
     const userId = session.metadata && session.metadata.user_id;
     if (userId) {
       db.prepare(
-        "UPDATE users SET plan = 'pro', stripe_customer_id = ?, stripe_subscription_id = ? WHERE id = ?"
+        "UPDATE users SET plan = 'pro', stripe_customer_id = ?, stripe_subscription_id = ?, cancel_at = 0 WHERE id = ?"
       ).run(session.customer || '', session.subscription || '', userId);
     }
   } else if (event.type === 'customer.subscription.deleted') {
-    // Safety net: if a subscription ends for any reason (cancellation, failed
-    // payments), downgrade the matching user to free.
+    // Safety net: when a subscription actually ends (period reached after a
+    // scheduled cancel, or failed payments), downgrade the matching user.
     const sub = event.data.object;
     if (sub && sub.id) {
-      db.prepare("UPDATE users SET plan = 'free', stripe_subscription_id = '' WHERE stripe_subscription_id = ?").run(sub.id);
+      db.prepare("UPDATE users SET plan = 'free', stripe_subscription_id = '', cancel_at = 0 WHERE stripe_subscription_id = ?").run(sub.id);
     }
   }
   res.json({ received: true });

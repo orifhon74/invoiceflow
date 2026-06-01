@@ -18,6 +18,7 @@ function publicUser(u) {
     business_logo: u.business_logo || '',
     currency: u.currency,
     plan: u.plan,
+    cancel_at: u.cancel_at || 0,
     email_verified: u.email_verified,
   };
 }

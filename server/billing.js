@@ -37,11 +37,28 @@ async function createCheckoutSession(user) {
   return session.url;
 }
 
-// Cancels a Stripe subscription immediately (stops future billing).
-async function cancelSubscription(subscriptionId) {
-  if (!stripeReady || !subscriptionId) return { canceled: false };
-  await stripe.subscriptions.cancel(subscriptionId);
-  return { canceled: true };
+// Schedules a Stripe subscription to cancel at the end of the current paid
+// period (the customer keeps access until then, and isn't billed again).
+// Returns the unix timestamp when access ends.
+async function scheduleCancelAtPeriodEnd(subscriptionId) {
+  if (!stripeReady || !subscriptionId) return { scheduled: false, endsAt: 0 };
+  const sub = await stripe.subscriptions.update(subscriptionId, { cancel_at_period_end: true });
+  return { scheduled: true, endsAt: sub.cancel_at || sub.current_period_end || 0 };
 }
 
-module.exports = { isLive, createCheckoutSession, cancelSubscription, stripe, PRICE_ID, APP_URL };
+// Undo a scheduled cancellation (subscription keeps renewing).
+async function resumeSubscription(subscriptionId) {
+  if (!stripeReady || !subscriptionId) return { resumed: false };
+  await stripe.subscriptions.update(subscriptionId, { cancel_at_period_end: false });
+  return { resumed: true };
+}
+
+module.exports = {
+  isLive,
+  createCheckoutSession,
+  scheduleCancelAtPeriodEnd,
+  resumeSubscription,
+  stripe,
+  PRICE_ID,
+  APP_URL,
+};

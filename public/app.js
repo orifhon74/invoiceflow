@@ -814,9 +814,12 @@ async function renderSettings() {
     <div class="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm mt-6 max-w-lg">
       <h3 class="font-semibold">Plan</h3>
       <p class="text-sm text-slate-500 mt-1">You are on the <b>${u.plan === 'pro' ? 'Pro' : 'Free'}</b> plan.</p>
-      ${u.plan === 'pro'
-        ? `<button onclick="cancelPlan()" class="mt-4 border border-slate-300 hover:bg-slate-50 font-medium px-4 py-2 rounded-lg text-sm">Cancel subscription</button>`
-        : `<a href="#/upgrade" class="inline-block mt-4 bg-brand hover:bg-brand-dark text-white font-semibold px-5 py-2.5 rounded-lg">Upgrade to Pro</a>`}
+      ${u.plan === 'pro' && u.cancel_at > 0
+        ? `<p class="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3 mt-3">Your subscription is set to cancel on <b>${new Date(u.cancel_at * 1000).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</b>. You keep Pro until then.</p>
+           <button onclick="resumePlan()" class="mt-3 bg-brand hover:bg-brand-dark text-white font-semibold px-4 py-2 rounded-lg text-sm">Resume subscription</button>`
+        : u.plan === 'pro'
+          ? `<button onclick="cancelPlan()" class="mt-4 border border-slate-300 hover:bg-slate-50 font-medium px-4 py-2 rounded-lg text-sm">Cancel subscription</button>`
+          : `<a href="#/upgrade" class="inline-block mt-4 bg-brand hover:bg-brand-dark text-white font-semibold px-5 py-2.5 rounded-lg">Upgrade to Pro</a>`}
     </div>`);
   document.getElementById('profileForm').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -828,9 +831,21 @@ async function renderSettings() {
   });
 }
 async function cancelPlan() {
-  if (!confirm('Cancel Pro and return to the Free plan?')) return;
-  try { await API.post('/api/billing/cancel'); state.user.plan = 'free'; toast('Subscription canceled', 'success'); renderSettings(); }
-  catch (e) { toast(e.message, 'error'); }
+  if (!confirm("Cancel your Pro subscription? You'll keep Pro until the end of your current billing period, and won't be charged again.")) return;
+  try {
+    const r = await API.post('/api/billing/cancel');
+    const me = await API.get('/api/auth/me'); state.user = me.user;
+    if (r.scheduled) toast('Subscription will end at your billing date — you keep Pro until then', 'success');
+    else toast('Subscription canceled', 'success');
+    renderSettings();
+  } catch (e) { toast(e.message, 'error'); }
+}
+async function resumePlan() {
+  try {
+    await API.post('/api/billing/resume');
+    const me = await API.get('/api/auth/me'); state.user = me.user;
+    toast('Subscription resumed', 'success'); renderSettings();
+  } catch (e) { toast(e.message, 'error'); }
 }
 async function uploadLogo(input) {
   const file = input.files && input.files[0];
@@ -885,7 +900,7 @@ async function startCheckout() {
 // expose handlers used by inline onclick
 Object.assign(window, {
   logout, setStatus, deleteInvoice, copyShare, sendInvoice, addItem, removeItem, itemChange, recalc,
-  clientForm, closeModal, deleteClient, cancelPlan, startCheckout,
+  clientForm, closeModal, deleteClient, cancelPlan, resumePlan, startCheckout,
   checkVerified, resendVerification, uploadLogo, removeLogo,
 });
 

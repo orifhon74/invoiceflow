@@ -31,6 +31,13 @@ function requireAuth(req, res, next) {
     const payload = jwt.verify(token, JWT_SECRET);
     const user = db.prepare('SELECT * FROM users WHERE id = ?').get(payload.uid);
     if (!user) return res.status(401).json({ error: 'Not authenticated' });
+    // If a scheduled cancellation's period-end has passed, downgrade now.
+    // This makes access end on the paid-through date even if no webhook fires.
+    if (user.plan === 'pro' && user.cancel_at && user.cancel_at > 0 && Date.now() / 1000 >= user.cancel_at) {
+      db.prepare("UPDATE users SET plan = 'free', cancel_at = 0, stripe_subscription_id = '' WHERE id = ?").run(user.id);
+      user.plan = 'free';
+      user.cancel_at = 0;
+    }
     req.user = user;
     next();
   } catch (e) {
