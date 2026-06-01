@@ -109,6 +109,37 @@ router.post('/resend-verification', requireAuth, async (req, res) => {
   res.json({ ok: true, sent: result.sent });
 });
 
+// Request a password reset link. Always returns ok (don't reveal if the email exists).
+router.post('/forgot-password', async (req, res) => {
+  const { email: rawEmail } = req.body || {};
+  if (rawEmail && EMAIL_RE.test(rawEmail)) {
+    const user = db.prepare('SELECT * FROM users WHERE email = ?').get(String(rawEmail).toLowerCase());
+    if (user && email.isConfigured()) {
+      const token = crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '');
+      const expires = Date.now() + 60 * 60 * 1000; // 1 hour
+      db.prepare('UPDATE users SET reset_token = ?, reset_expires = ? WHERE id = ?').run(token, expires, user.id);
+      const resetUrl = `${appBaseUrl(req)}/?reset_token=${token}`;
+      await email.sendPasswordResetEmail({ email: user.email, resetUrl });
+    }
+  }
+  res.json({ ok: true });
+});
+
+// Complete a password reset with a valid, unexpired token.
+router.post('/reset-password', (req, res) => {
+  const { token, password } = req.body || {};
+  if (!token || !password || password.length < 6) {
+    return res.status(400).json({ error: 'A valid token and a password of at least 6 characters are required.' });
+  }
+  const user = db.prepare("SELECT * FROM users WHERE reset_token = ? AND reset_token != ''").get(token);
+  if (!user || !user.reset_expires || user.reset_expires < Date.now()) {
+    return res.status(400).json({ error: 'This reset link is invalid or has expired. Please request a new one.' });
+  }
+  const hash = bcrypt.hashSync(password, 10);
+  db.prepare("UPDATE users SET password_hash = ?, reset_token = '', reset_expires = 0 WHERE id = ?").run(hash, user.id);
+  res.json({ ok: true });
+});
+
 router.get('/me', requireAuth, (req, res) => {
   res.json({ user: publicUser(req.user) });
 });

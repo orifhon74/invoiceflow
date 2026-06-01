@@ -293,6 +293,36 @@ test('login with correct and wrong password', async () => {
   assert.strictEqual(bad.status, 401);
 });
 
+test('password reset: forgot is always ok; reset with valid token works', async () => {
+  // forgot-password never reveals whether the account exists
+  const unknown = await call('POST', '/api/auth/forgot-password', { email: 'nobody@nowhere.com' });
+  assert.strictEqual(unknown.status, 200);
+  const known = await call('POST', '/api/auth/forgot-password', { email });
+  assert.strictEqual(known.status, 200);
+
+  // email isn't configured in tests, so set a token directly to exercise the reset endpoint
+  const db = require('../server/db');
+  const token = 'testresettoken1234567890abcdef';
+  db.prepare('UPDATE users SET reset_token = ?, reset_expires = ? WHERE email = ?')
+    .run(token, Date.now() + 3600000, email);
+
+  // wrong token and short password are rejected
+  assert.strictEqual((await call('POST', '/api/auth/reset-password', { token: 'wrong', password: 'newpass123' })).status, 400);
+  assert.strictEqual((await call('POST', '/api/auth/reset-password', { token, password: '123' })).status, 400);
+
+  // valid token + good password succeeds
+  const ok = await call('POST', '/api/auth/reset-password', { token, password: 'newpass123' });
+  assert.strictEqual(ok.status, 200);
+
+  // old password no longer works; new one does
+  cookie = '';
+  assert.strictEqual((await call('POST', '/api/auth/login', { email, password: 'secret123' })).status, 401);
+  assert.strictEqual((await call('POST', '/api/auth/login', { email, password: 'newpass123' })).status, 200);
+
+  // token can't be reused
+  assert.strictEqual((await call('POST', '/api/auth/reset-password', { token, password: 'another123' })).status, 400);
+});
+
 test('cleanup', () => {
   for (const ext of ['', '-wal', '-shm', '-journal']) {
     try { fs.unlinkSync(tmpDb + ext); } catch (e) {}

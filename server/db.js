@@ -31,6 +31,8 @@ CREATE TABLE IF NOT EXISTS users (
   business_logo TEXT DEFAULT '',               -- data URL, Pro only
   email_verified INTEGER NOT NULL DEFAULT 1,   -- 0 until verified (only enforced when email is configured)
   verify_token TEXT DEFAULT '',
+  reset_token TEXT DEFAULT '',
+  reset_expires INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -85,6 +87,8 @@ const migrations = [
   "ALTER TABLE users ADD COLUMN business_logo TEXT DEFAULT ''",
   "ALTER TABLE users ADD COLUMN email_verified INTEGER NOT NULL DEFAULT 1",
   "ALTER TABLE users ADD COLUMN verify_token TEXT DEFAULT ''",
+  "ALTER TABLE users ADD COLUMN reset_token TEXT DEFAULT ''",
+  "ALTER TABLE users ADD COLUMN reset_expires INTEGER NOT NULL DEFAULT 0",
 ];
 for (const sql of migrations) {
   try { db.exec(sql); } catch (e) { /* column already exists */ }

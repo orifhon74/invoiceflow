@@ -22,7 +22,12 @@ const API = {
 };
 
 const CURRENCY_SYMBOLS = { USD: '$', EUR: '€', GBP: '£', CAD: 'C$', AUD: 'A$', INR: '₹', JPY: '¥' };
-const state = { user: null, billingLive: false, chart: null };
+const state = { user: null, billingLive: false, chart: null, resetToken: null };
+// Capture a password-reset token from the emailed link before routing.
+{
+  const m = location.search.match(/[?&]reset_token=([a-f0-9]+)/i);
+  if (m) state.resetToken = m[1];
+}
 
 function money(n, cur) {
   const sym = CURRENCY_SYMBOLS[cur || (state.user && state.user.currency) || 'USD'] || '';
@@ -57,8 +62,14 @@ async function boot() {
 /* ---------------- Router ---------------- */
 function render() {
   const route = location.hash.replace(/^#/, '') || (state.user ? '/dashboard' : '/');
+  // A password-reset link (?reset_token=...) takes priority over everything.
+  if (state.resetToken) return renderResetPassword(state.resetToken);
+  // Legal pages are public, available whether logged in or not.
+  if (route === '/terms') return renderTerms();
+  if (route === '/privacy') return renderPrivacy();
   if (!state.user) {
     if (route === '/login' || route === '/signup') return renderAuth(route === '/signup' ? 'signup' : 'login');
+    if (route === '/forgot') return renderForgot();
     return renderLanding();
   }
   // Unverified users must verify their email before using the app.
@@ -136,7 +147,61 @@ function renderLanding() {
     </div>
   </section>
 
-  <footer class="border-t border-slate-200 py-8 text-center text-sm text-slate-400">© ${new Date().getFullYear()} InvoiceFlow</footer>`;
+  <footer class="border-t border-slate-200 py-8 text-center text-sm text-slate-400">
+    <div class="flex items-center justify-center gap-4 flex-wrap">
+      <a href="#/terms" class="hover:text-slate-600">Terms</a>
+      <span>·</span>
+      <a href="#/privacy" class="hover:text-slate-600">Privacy</a>
+      <span>·</span>
+      <a href="mailto:support@invoiceflowapp.app" class="hover:text-slate-600">support@invoiceflowapp.app</a>
+    </div>
+    <div class="mt-2">© ${new Date().getFullYear()} InvoiceFlow</div>
+  </footer>`;
+}
+
+/* ---------------- Legal pages ---------------- */
+function legalPage(title, bodyHtml) {
+  app().innerHTML = `
+  <header class="max-w-3xl mx-auto px-6 py-5">
+    <a href="#/" class="flex items-center gap-2 font-extrabold text-xl"><span class="text-brand">●</span> InvoiceFlow</a>
+  </header>
+  <main class="max-w-3xl mx-auto px-6 pb-24 fade-in">
+    <h1 class="text-3xl font-extrabold mb-2">${title}</h1>
+    <p class="text-slate-400 text-sm mb-8">Last updated ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
+    <div class="prose-sm text-slate-700 leading-relaxed space-y-4">${bodyHtml}</div>
+    <p class="mt-10"><a href="#/" class="text-brand font-semibold">← Back to home</a></p>
+  </main>`;
+}
+function h(t) { return `<h2 class="text-lg font-bold mt-6 mb-1 text-slate-900">${t}</h2>`; }
+function renderTerms() {
+  legalPage('Terms of Service', `
+    <p>These Terms govern your use of InvoiceFlow ("the Service"), an online invoicing tool. By creating an account, you agree to these Terms.</p>
+    ${h('1. The Service')}<p>InvoiceFlow lets you create, send, and track invoices. We may update or change features over time.</p>
+    ${h('2. Your account')}<p>You're responsible for keeping your login credentials secure and for all activity under your account. You must provide accurate information and be at least 18 years old.</p>
+    ${h('3. Plans and payment')}<p>The Free plan has usage limits. The Pro plan is billed monthly via our payment processor, Stripe. Subscriptions renew automatically until cancelled; you can cancel anytime from Settings, effective at the end of the current billing period. Fees are non-refundable except where required by law.</p>
+    ${h('4. Acceptable use')}<p>Don't use the Service for unlawful, fraudulent, or abusive purposes, to send spam, or to infringe others' rights. You're solely responsible for the content of the invoices you create and send.</p>
+    ${h('5. Your data')}<p>You retain ownership of the data you put into the Service (clients, invoices, business details). You grant us permission to process it solely to operate the Service. See our Privacy Policy for details.</p>
+    ${h('6. Availability & disclaimer')}<p>The Service is provided "as is," without warranties of any kind. We don't guarantee uninterrupted or error-free operation.</p>
+    ${h('7. Limitation of liability')}<p>To the maximum extent permitted by law, InvoiceFlow is not liable for indirect, incidental, or consequential damages, or for any amount exceeding the fees you paid in the prior 12 months.</p>
+    ${h('8. Termination')}<p>You may stop using the Service at any time. We may suspend or terminate accounts that violate these Terms.</p>
+    ${h('9. Changes')}<p>We may update these Terms; material changes will be posted here with an updated date.</p>
+    ${h('10. Contact')}<p>Questions? Email <a class="text-brand" href="mailto:support@invoiceflowapp.app">support@invoiceflowapp.app</a>.</p>
+    <p class="text-slate-400 text-xs mt-8">This is a general template and not legal advice. Consider having a lawyer review it for your jurisdiction.</p>
+  `);
+}
+function renderPrivacy() {
+  legalPage('Privacy Policy', `
+    <p>This policy explains what data InvoiceFlow collects and how we use it.</p>
+    ${h('Information we collect')}<p>Account data (your email and password hash), business profile you enter (name, address, logo, currency), and the invoice and client data you create. Payment details are handled by Stripe — we never see or store your full card number.</p>
+    ${h('How we use it')}<p>To provide the Service: authenticate you, store and display your invoices and clients, send invoice and account emails, and process subscriptions.</p>
+    ${h('Service providers')}<p>We share data only with providers that help us run the Service: <b>Stripe</b> (payments), <b>Resend</b> (sending email), and <b>Render</b> (hosting). They process data on our behalf under their own terms.</p>
+    ${h('Email')}<p>We send transactional emails (invoices you trigger, verification, password resets, billing). These are necessary to use the Service.</p>
+    ${h('Data retention')}<p>We keep your data while your account is active. You can request deletion by emailing us.</p>
+    ${h('Cookies')}<p>We use a single secure cookie to keep you logged in. We don't use third-party advertising trackers.</p>
+    ${h('Your rights')}<p>You can access, correct, export, or delete your data — contact us to make a request.</p>
+    ${h('Contact')}<p>Privacy questions: <a class="text-brand" href="mailto:support@invoiceflowapp.app">support@invoiceflowapp.app</a>.</p>
+    <p class="text-slate-400 text-xs mt-8">This is a general template and not legal advice. Consider having a lawyer review it for your jurisdiction.</p>
+  `);
 }
 
 /* ---------------- Auth ---------------- */
@@ -163,6 +228,7 @@ function renderAuth(mode) {
           ? `Already have an account? <a href="#/login" class="text-brand font-semibold">Log in</a>`
           : `New here? <a href="#/signup" class="text-brand font-semibold">Create an account</a>`}
       </p>
+      ${mode === 'login' ? `<p class="text-sm text-slate-400 mt-2 text-center"><a href="#/forgot" class="hover:text-brand">Forgot your password?</a></p>` : ''}
     </div>
   </div>`;
   document.getElementById('authForm').addEventListener('submit', async (e) => {
@@ -179,6 +245,57 @@ function renderAuth(mode) {
         toast(mode === 'signup' ? 'Account created!' : 'Logged in', 'success');
         go('/dashboard');
       }
+    } catch (err) { toast(err.message, 'error'); }
+  });
+}
+
+/* ---------------- Forgot / reset password ---------------- */
+function renderForgot() {
+  app().innerHTML = `
+  <div class="min-h-screen flex items-center justify-center px-6">
+    <div class="w-full max-w-sm bg-white rounded-2xl shadow-xl border border-slate-100 p-8 fade-in">
+      <a href="#/" class="flex items-center gap-2 font-extrabold text-xl mb-6"><span class="text-brand">●</span> InvoiceFlow</a>
+      <h1 class="text-2xl font-bold">Reset password</h1>
+      <p class="text-slate-500 text-sm mt-1">Enter your email and we'll send you a reset link.</p>
+      <form id="forgotForm" class="mt-6 space-y-4">
+        <input name="email" type="email" required class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-brand focus:border-brand outline-none" placeholder="you@example.com">
+        <button class="w-full bg-brand hover:bg-brand-dark text-white font-semibold py-2.5 rounded-lg">Send reset link</button>
+      </form>
+      <p class="text-sm text-slate-500 mt-5 text-center"><a href="#/login" class="text-brand font-semibold">Back to log in</a></p>
+    </div>
+  </div>`;
+  document.getElementById('forgotForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const email = new FormData(e.target).get('email');
+    try {
+      await API.post('/api/auth/forgot-password', { email });
+      app().querySelector('#forgotForm').outerHTML =
+        `<div class="mt-6 text-sm text-slate-600 bg-slate-50 border border-slate-200 rounded-lg p-4">If an account exists for <b>${esc(email)}</b>, a reset link is on its way. Check your inbox (and spam).</div>`;
+    } catch (err) { toast(err.message, 'error'); }
+  });
+}
+
+function renderResetPassword(token) {
+  app().innerHTML = `
+  <div class="min-h-screen flex items-center justify-center px-6">
+    <div class="w-full max-w-sm bg-white rounded-2xl shadow-xl border border-slate-100 p-8 fade-in">
+      <a href="#/" class="flex items-center gap-2 font-extrabold text-xl mb-6"><span class="text-brand">●</span> InvoiceFlow</a>
+      <h1 class="text-2xl font-bold">Choose a new password</h1>
+      <form id="resetForm" class="mt-6 space-y-4">
+        <input name="password" type="password" required minlength="6" class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-brand focus:border-brand outline-none" placeholder="New password (min 6 chars)">
+        <button class="w-full bg-brand hover:bg-brand-dark text-white font-semibold py-2.5 rounded-lg">Update password</button>
+      </form>
+    </div>
+  </div>`;
+  document.getElementById('resetForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const password = new FormData(e.target).get('password');
+    try {
+      await API.post('/api/auth/reset-password', { token, password });
+      history.replaceState({}, '', location.pathname);
+      state.resetToken = null;
+      toast('Password updated — please log in', 'success');
+      go('/login');
     } catch (err) { toast(err.message, 'error'); }
   });
 }
@@ -221,25 +338,31 @@ function shell(active, content) {
     ? `<span class="text-xs font-bold bg-amber-100 text-amber-700 px-2 py-0.5 rounded">PRO</span>`
     : `<a href="#/upgrade" class="text-xs font-bold bg-brand-light text-brand px-2 py-0.5 rounded hover:bg-indigo-100">Free · Upgrade</a>`;
   const link = (href, label, icon) => `
-    <a href="#${href}" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium ${active === href ? 'bg-brand-light text-brand' : 'text-slate-600 hover:bg-slate-100'}">
+    <a href="#${href}" class="flex items-center gap-2 md:gap-3 px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap ${active === href ? 'bg-brand-light text-brand' : 'text-slate-600 hover:bg-slate-100'}">
       <span class="w-5 text-center">${icon}</span>${label}</a>`;
   app().innerHTML = `
-  <div class="flex min-h-screen">
-    <aside class="w-60 shrink-0 bg-white border-r border-slate-200 flex flex-col p-4">
-      <a href="#/dashboard" class="flex items-center gap-2 font-extrabold text-lg px-2 mb-6"><span class="text-brand">●</span> InvoiceFlow</a>
-      <nav class="space-y-1">
+  <div class="md:flex md:min-h-screen">
+    <aside class="bg-white border-b md:border-b-0 md:border-r border-slate-200 md:w-60 md:shrink-0 md:flex md:flex-col md:p-4">
+      <div class="flex items-center justify-between p-3 md:p-0 md:mb-6">
+        <a href="#/dashboard" class="flex items-center gap-2 font-extrabold text-lg md:px-2"><span class="text-brand">●</span> InvoiceFlow</a>
+        <div class="flex items-center gap-3 md:hidden">
+          ${planBadge}
+          <button onclick="logout()" class="text-sm text-slate-500">Log out</button>
+        </div>
+      </div>
+      <nav class="flex md:flex-col gap-1 overflow-x-auto px-2 pb-2 md:px-0 md:pb-0">
         ${link('/dashboard', 'Dashboard', '▦')}
         ${link('/invoices', 'Invoices', '🧾')}
         ${link('/clients', 'Clients', '👥')}
         ${link('/settings', 'Settings', '⚙')}
       </nav>
-      <div class="mt-auto pt-4 border-t border-slate-100">
+      <div class="hidden md:block mt-auto pt-4 border-t border-slate-100">
         <div class="px-2 text-sm font-medium truncate">${esc(u.email)}</div>
         <div class="px-2 mt-1 mb-3">${planBadge}</div>
         <button onclick="logout()" class="w-full text-left px-3 py-2 rounded-lg text-sm text-slate-500 hover:bg-slate-100">Log out</button>
       </div>
     </aside>
-    <main class="flex-1 overflow-auto"><div class="max-w-5xl mx-auto px-8 py-8 fade-in">${content}</div></main>
+    <main class="flex-1 overflow-auto"><div class="max-w-5xl mx-auto px-4 md:px-8 py-6 md:py-8 fade-in">${content}</div></main>
   </div>`;
 }
 

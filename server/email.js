@@ -85,6 +85,26 @@ async function sendVerificationEmail({ email, verifyUrl }) {
   return sendViaResend({ to: email, subject, html });
 }
 
+function buildPasswordResetEmail({ email, resetUrl }) {
+  const subject = 'Reset your InvoiceFlow password';
+  const html = `
+  <div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:520px;margin:0 auto;color:#0f172a">
+    <h2 style="margin:0 0 12px">Reset your password</h2>
+    <p>We received a request to reset the password for <b>${esc(email)}</b>. Click below to choose a new one. This link expires in 1 hour.</p>
+    <p style="margin:28px 0">
+      <a href="${esc(resetUrl)}" style="background:#4f46e5;color:#fff;text-decoration:none;font-weight:600;padding:12px 22px;border-radius:10px;display:inline-block">Reset password</a>
+    </p>
+    <p style="color:#64748b;font-size:13px">Or paste this link: <br>${esc(resetUrl)}</p>
+    <p style="color:#94a3b8;font-size:12px;margin-top:28px">If you didn't request this, you can safely ignore this email — your password won't change.</p>
+  </div>`;
+  return { subject, html };
+}
+
+async function sendPasswordResetEmail({ email, resetUrl }) {
+  const { subject, html } = buildPasswordResetEmail({ email, resetUrl });
+  return sendViaResend({ to: email, subject, html });
+}
+
 // Sends the email. Returns { sent: boolean, reason?, id? }.
 async function sendInvoiceEmail(payload) {
   const { subject, html } = buildInvoiceEmail(payload);
@@ -122,4 +142,6 @@ module.exports = {
   sendInvoiceEmail,
   buildVerificationEmail,
   sendVerificationEmail,
+  buildPasswordResetEmail,
+  sendPasswordResetEmail,
 };
