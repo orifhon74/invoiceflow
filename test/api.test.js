@@ -57,6 +57,9 @@ test('signup creates an account and sets cookie', async () => {
   assert.strictEqual(r.status, 200);
   assert.strictEqual(r.body.user.email, email);
   assert.strictEqual(r.body.user.plan, 'free');
+  // Email isn't configured in tests, so signups are auto-verified.
+  assert.strictEqual(r.body.needsVerification, false);
+  assert.strictEqual(r.body.user.email_verified, 1);
   assert.ok(cookie.includes('if_token'), 'auth cookie set');
 });
 
@@ -98,6 +101,23 @@ test('create client', async () => {
 test('client without name rejected', async () => {
   const r = await call('POST', '/api/clients', { email: 'no@name.com' });
   assert.strictEqual(r.status, 400);
+});
+
+test('free plan client limit enforced (4th client blocked)', async () => {
+  // we already have 1 client (Jane); add 2 more to reach the limit of 3
+  for (let i = 0; i < 2; i++) {
+    const r = await call('POST', '/api/clients', { name: 'Extra Client ' + i });
+    assert.strictEqual(r.status, 201, `client ${i + 2} should be created`);
+  }
+  const blocked = await call('POST', '/api/clients', { name: 'One Too Many' });
+  assert.strictEqual(blocked.status, 402);
+  assert.strictEqual(blocked.body.upgrade, true);
+});
+
+test('free plan cannot set a business logo', async () => {
+  const r = await call('PUT', '/api/auth/me', { business_logo: 'data:image/png;base64,iVBORw0KGgo=' });
+  assert.strictEqual(r.status, 402);
+  assert.strictEqual(r.body.upgrade, true);
 });
 
 test('create invoice with line items and correct totals', async () => {
@@ -157,7 +177,7 @@ test('stats reflect paid revenue', async () => {
   assert.strictEqual(r.status, 200);
   assert.strictEqual(r.body.stats.paid, 1188);
   assert.strictEqual(r.body.stats.outstanding, 0);
-  assert.strictEqual(r.body.stats.clientCount, 1);
+  assert.strictEqual(r.body.stats.clientCount, 3); // Jane + 2 from the client-limit test
   assert.strictEqual(r.body.stats.series.length, 6);
 });
 
@@ -195,6 +215,20 @@ test('mock checkout upgrades user to pro and lifts the limit', async () => {
   assert.strictEqual(me.body.user.plan, 'pro');
   // now a 6th+ invoice succeeds
   const r = await call('POST', '/api/invoices', { client_id: clientId, items: [{ description: 'pro', quantity: 1, unit_price: 1 }] });
+  assert.strictEqual(r.status, 201);
+});
+
+test('pro can set a business logo, invalid format rejected', async () => {
+  const logo = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+  const ok = await call('PUT', '/api/auth/me', { business_logo: logo });
+  assert.strictEqual(ok.status, 200);
+  assert.strictEqual(ok.body.user.business_logo, logo);
+  const bad = await call('PUT', '/api/auth/me', { business_logo: 'not-an-image' });
+  assert.strictEqual(bad.status, 400);
+});
+
+test('pro can add a 4th+ client (limit lifted)', async () => {
+  const r = await call('POST', '/api/clients', { name: 'Pro Client' });
   assert.strictEqual(r.status, 201);
 });
 

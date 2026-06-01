@@ -38,4 +38,14 @@ function requireAuth(req, res, next) {
   }
 }
 
-module.exports = { signToken, setAuthCookie, clearAuthCookie, requireAuth, COOKIE };
+// Blocks write actions until the account's email is verified.
+// (email_verified defaults to 1, so this only bites when signup set it to 0,
+// which only happens when email sending is configured.)
+function requireVerified(req, res, next) {
+  if (req.user && req.user.email_verified === 0) {
+    return res.status(403).json({ error: 'Please verify your email address first.', needsVerification: true });
+  }
+  next();
+}
+
+module.exports = { signToken, setAuthCookie, clearAuthCookie, requireAuth, requireVerified, COOKIE };

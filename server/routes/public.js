@@ -27,7 +27,7 @@ router.get('/api/public/invoices/:token', (req, res) => {
   const items = db.prepare('SELECT * FROM line_items WHERE invoice_id = ? ORDER BY position, id').all(inv.id);
   const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(inv.client_id);
   const business = db
-    .prepare('SELECT business_name, business_email, business_address FROM users WHERE id = ?')
+    .prepare('SELECT business_name, business_email, business_address, business_logo FROM users WHERE id = ?')
     .get(inv.user_id);
   res.json({ invoice: { ...inv, items, client, business, totals: computeTotals(inv, items) } });
 });
@@ -39,7 +39,7 @@ router.get('/i/:token', (req, res) => {
   const items = db.prepare('SELECT * FROM line_items WHERE invoice_id = ? ORDER BY position, id').all(inv.id);
   const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(inv.client_id);
   const biz = db
-    .prepare('SELECT business_name, business_email, business_address FROM users WHERE id = ?')
+    .prepare('SELECT business_name, business_email, business_address, business_logo FROM users WHERE id = ?')
     .get(inv.user_id);
   const t = computeTotals(inv, items);
   const cur = inv.currency;
@@ -95,6 +95,7 @@ router.get('/i/:token', (req, res) => {
         <div class="muted">${esc(inv.number)}</div>
       </div>
       <div style="text-align:right">
+        ${biz.business_logo ? `<div><img src="${biz.business_logo}" alt="" style="max-height:60px;max-width:200px;object-fit:contain;margin-bottom:10px"></div>` : ''}
         <span class="badge" style="background:${statusColors[inv.status] || '#6b7280'}">${esc(inv.status)}</span>
         <div style="margin-top:10px;font-weight:700">${esc(biz.business_name || '')}</div>
         <div class="muted" style="font-size:13px">${esc(biz.business_email || '')}</div>

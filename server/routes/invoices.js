@@ -2,7 +2,7 @@
 const crypto = require('crypto');
 const express = require('express');
 const db = require('../db');
-const { requireAuth } = require('../auth');
+const { requireAuth, requireVerified } = require('../auth');
 const { computeTotals } = require('../totals');
 const email = require('../email');
 
@@ -67,7 +67,7 @@ router.get('/:id', (req, res) => {
   res.json({ invoice: full });
 });
 
-router.post('/', (req, res) => {
+router.post('/', requireVerified, (req, res) => {
   // Feature gate: free users capped at FREE_INVOICE_LIMIT invoices.
   if (req.user.plan !== 'pro') {
     const count = db.prepare('SELECT COUNT(*) AS c FROM invoices WHERE user_id = ?').get(req.user.id).c;
@@ -155,7 +155,7 @@ router.patch('/:id/status', (req, res) => {
 });
 
 // Email this invoice to the client and mark it sent.
-router.post('/:id/send', async (req, res) => {
+router.post('/:id/send', requireVerified, async (req, res) => {
   const full = loadFull(req.params.id, req.user.id);
   if (!full) return res.status(404).json({ error: 'Invoice not found' });
   if (!full.client || !full.client.email) {
@@ -167,6 +167,7 @@ router.post('/:id/send', async (req, res) => {
   const business = {
     business_name: req.user.business_name,
     business_email: req.user.business_email,
+    business_logo: req.user.business_logo,
   };
 
   const result = await email.sendInvoiceEmail({

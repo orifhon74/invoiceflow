@@ -28,6 +28,9 @@ CREATE TABLE IF NOT EXISTS users (
   currency TEXT DEFAULT 'USD',
   plan TEXT NOT NULL DEFAULT 'free',           -- 'free' | 'pro'
   stripe_customer_id TEXT DEFAULT '',
+  business_logo TEXT DEFAULT '',               -- data URL, Pro only
+  email_verified INTEGER NOT NULL DEFAULT 1,   -- 0 until verified (only enforced when email is configured)
+  verify_token TEXT DEFAULT '',
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -75,5 +78,16 @@ CREATE INDEX IF NOT EXISTS idx_invoices_user ON invoices(user_id);
 CREATE INDEX IF NOT EXISTS idx_items_invoice ON line_items(invoice_id);
 CREATE INDEX IF NOT EXISTS idx_invoices_token ON invoices(public_token);
 `);
+
+// Migrations for databases created before these columns existed (e.g. production).
+// node:sqlite throws if the column already exists, so each is best-effort.
+const migrations = [
+  "ALTER TABLE users ADD COLUMN business_logo TEXT DEFAULT ''",
+  "ALTER TABLE users ADD COLUMN email_verified INTEGER NOT NULL DEFAULT 1",
+  "ALTER TABLE users ADD COLUMN verify_token TEXT DEFAULT ''",
+];
+for (const sql of migrations) {
+  try { db.exec(sql); } catch (e) { /* column already exists */ }
+}
 
 module.exports = db;

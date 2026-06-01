@@ -61,6 +61,8 @@ function render() {
     if (route === '/login' || route === '/signup') return renderAuth(route === '/signup' ? 'signup' : 'login');
     return renderLanding();
   }
+  // Unverified users must verify their email before using the app.
+  if (state.user.email_verified === 0) return renderVerifyNotice();
   // authed routes
   if (route.startsWith('/invoices/new')) return renderInvoiceEditor(null);
   if (route.startsWith('/invoices/')) {
@@ -118,7 +120,7 @@ function renderLanding() {
         <h3 class="font-bold text-xl">Free</h3>
         <div class="text-4xl font-extrabold mt-2">$0<span class="text-base font-medium text-slate-400">/mo</span></div>
         <ul class="mt-5 space-y-2 text-sm text-slate-600">
-          <li>✓ Up to 5 invoices</li><li>✓ Unlimited clients</li><li>✓ Shareable invoice links</li><li>✓ Dashboard & reports</li>
+          <li>✓ Up to 5 invoices</li><li>✓ Up to 3 clients</li><li>✓ Shareable invoice links</li><li>✓ Basic summary</li>
         </ul>
         <a href="#/signup" class="block text-center mt-6 border border-slate-300 hover:bg-slate-50 font-semibold py-2.5 rounded-lg">Get started</a>
       </div>
@@ -127,7 +129,7 @@ function renderLanding() {
         <h3 class="font-bold text-xl">Pro</h3>
         <div class="text-4xl font-extrabold mt-2">$12<span class="text-base font-medium text-slate-400">/mo</span></div>
         <ul class="mt-5 space-y-2 text-sm text-slate-300">
-          <li>✓ <b>Unlimited</b> invoices</li><li>✓ Everything in Free</li><li>✓ Custom business branding</li><li>✓ Priority support</li>
+          <li>✓ <b>Unlimited</b> invoices & clients</li><li>✓ Custom logo on invoices</li><li>✓ Full revenue dashboard & reports</li><li>✓ Priority support</li>
         </ul>
         <a href="#/signup" class="block text-center mt-6 bg-brand hover:bg-brand-dark font-semibold py-2.5 rounded-lg">Start free, upgrade anytime</a>
       </div>
@@ -170,10 +172,46 @@ function renderAuth(mode) {
     try {
       const data = await API.post(mode === 'signup' ? '/api/auth/signup' : '/api/auth/login', body);
       state.user = data.user;
-      toast(mode === 'signup' ? 'Account created!' : 'Logged in', 'success');
-      go('/dashboard');
+      if (mode === 'signup' && data.needsVerification) {
+        toast('Account created — check your email', 'success');
+        go('/verify-email');
+      } else {
+        toast(mode === 'signup' ? 'Account created!' : 'Logged in', 'success');
+        go('/dashboard');
+      }
     } catch (err) { toast(err.message, 'error'); }
   });
+}
+
+/* ---------------- Email verification notice ---------------- */
+function renderVerifyNotice() {
+  const u = state.user;
+  app().innerHTML = `
+  <div class="min-h-screen flex items-center justify-center px-6">
+    <div class="w-full max-w-md bg-white rounded-2xl shadow-xl border border-slate-100 p-8 text-center fade-in">
+      <div class="text-4xl">✉️</div>
+      <h1 class="text-2xl font-bold mt-3">Verify your email</h1>
+      <p class="text-slate-500 mt-2">We sent a verification link to <b>${esc(u.email)}</b>. Click it to activate your account, then come back here.</p>
+      <button onclick="checkVerified()" class="w-full mt-6 bg-brand hover:bg-brand-dark text-white font-semibold py-2.5 rounded-lg">I've verified — continue</button>
+      <button onclick="resendVerification()" class="w-full mt-3 border border-slate-300 hover:bg-slate-50 font-medium py-2.5 rounded-lg">Resend email</button>
+      <button onclick="logout()" class="mt-4 text-sm text-slate-400 hover:text-slate-600">Log out</button>
+    </div>
+  </div>`;
+}
+async function checkVerified() {
+  try {
+    const me = await API.get('/api/auth/me');
+    state.user = me.user;
+    if (me.user.email_verified === 1) { toast('Email verified!', 'success'); go('/dashboard'); }
+    else toast("Not verified yet — check your inbox", 'info');
+  } catch (e) { toast(e.message, 'error'); }
+}
+async function resendVerification() {
+  try {
+    const r = await API.post('/api/auth/resend-verification');
+    if (r.autoVerified) { const me = await API.get('/api/auth/me'); state.user = me.user; toast('Verified!', 'success'); go('/dashboard'); }
+    else toast('Verification email sent', 'success');
+  } catch (e) { toast(e.message, 'error'); }
 }
 
 /* ---------------- App shell ---------------- */
@@ -226,11 +264,13 @@ async function renderDashboard() {
       ${sub ? `<div class="text-xs text-slate-400 mt-1">${sub}</div>` : ''}
     </div>`;
 
+  const isPro = s.plan === 'pro';
   shell('/dashboard', `
     <div class="flex items-center justify-between mb-6">
       <div><h1 class="text-2xl font-bold">Dashboard</h1><p class="text-slate-500 text-sm">Your business at a glance</p></div>
       <a href="#/invoices/new" class="bg-brand hover:bg-brand-dark text-white font-semibold px-4 py-2.5 rounded-lg text-sm">+ New invoice</a>
     </div>
+    ${isPro ? `
     <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
       ${card('Paid', money(s.paid), `${s.invoiceCount} invoices total`, 'text-emerald-600')}
       ${card('Outstanding', money(s.outstanding), 'awaiting payment', 'text-blue-600')}
@@ -240,7 +280,21 @@ async function renderDashboard() {
     <div class="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm mt-6">
       <h3 class="font-semibold mb-3">Revenue (last 6 months)</h3>
       <canvas id="revChart" height="90"></canvas>
+    </div>` : `
+    <div class="grid grid-cols-3 gap-4">
+      ${card('Invoices', s.invoiceCount, `${s.draftCount} drafts`, '')}
+      ${card('Clients', s.clientCount, 'in your address book', '')}
+      ${card('Plan', 'Free', 'upgrade for reports', 'text-brand')}
     </div>
+    <div class="relative bg-white rounded-2xl border border-slate-100 p-8 shadow-sm mt-6 overflow-hidden">
+      <div class="absolute inset-0 bg-gradient-to-b from-transparent to-white"></div>
+      <div class="text-center relative">
+        <div class="text-3xl">📊</div>
+        <h3 class="font-bold text-lg mt-2">Revenue dashboard & reports</h3>
+        <p class="text-slate-500 text-sm mt-1 max-w-sm mx-auto">See paid, outstanding, and overdue totals plus a 6-month revenue chart. Unlock the full dashboard with Pro.</p>
+        <a href="#/upgrade" class="inline-block mt-4 bg-brand hover:bg-brand-dark text-white font-semibold px-5 py-2.5 rounded-lg">Upgrade to Pro</a>
+      </div>
+    </div>`}
     <div class="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm mt-6">
       <div class="flex items-center justify-between mb-3"><h3 class="font-semibold">Recent invoices</h3><a href="#/invoices" class="text-sm text-brand font-medium">View all →</a></div>
       ${recent.length ? invoiceTable(recent) : `<p class="text-slate-400 text-sm py-6 text-center">No invoices yet. <a href="#/invoices/new" class="text-brand font-medium">Create one →</a></p>`}
@@ -526,11 +580,15 @@ async function submitInvoice(e, id) {
 /* ---------------- Clients ---------------- */
 async function renderClients() {
   shell('/clients', `<div class="text-slate-400">Loading…</div>`);
-  let clients;
-  try { clients = (await API.get('/api/clients')).clients; } catch (e) { return toast(e.message, 'error'); }
+  let data;
+  try { data = await API.get('/api/clients'); } catch (e) { return toast(e.message, 'error'); }
+  const clients = data.clients;
+  const sub = data.plan !== 'pro'
+    ? `${clients.length} of ${data.freeLimit} used on free plan`
+    : `${clients.length} total`;
   shell('/clients', `
     <div class="flex items-center justify-between mb-6">
-      <div><h1 class="text-2xl font-bold">Clients</h1><p class="text-slate-500 text-sm">${clients.length} total</p></div>
+      <div><h1 class="text-2xl font-bold">Clients</h1><p class="text-slate-500 text-sm">${sub}</p></div>
       <button onclick="clientForm()" class="bg-brand hover:bg-brand-dark text-white font-semibold px-4 py-2.5 rounded-lg text-sm">+ Add client</button>
     </div>
     <div class="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
@@ -571,7 +629,10 @@ function clientForm(c) {
     try {
       if (c.id) await API.put('/api/clients/' + c.id, body); else await API.post('/api/clients', body);
       toast('Saved', 'success'); closeModal(); renderClients();
-    } catch (err) { toast(err.message, 'error'); }
+    } catch (err) {
+      if (err.data && err.data.upgrade) { closeModal(); toast(err.message, 'error'); setTimeout(() => go('/upgrade'), 800); }
+      else toast(err.message, 'error');
+    }
   });
 }
 function closeModal() { const m = document.getElementById('modal'); if (m) m.innerHTML = ''; }
@@ -602,6 +663,31 @@ async function renderSettings() {
       <button class="bg-brand hover:bg-brand-dark text-white font-semibold px-5 py-2.5 rounded-lg">Save profile</button>
     </form>
 
+    ${u.plan === 'pro' ? `
+    <div class="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm mt-6 max-w-lg">
+      <h3 class="font-semibold">Business logo</h3>
+      <p class="text-sm text-slate-500 mt-1">Appears on your invoices and the emails you send.</p>
+      <div class="mt-4 flex items-center gap-4">
+        <div class="w-32 h-20 rounded-lg border border-slate-200 flex items-center justify-center overflow-hidden bg-slate-50">
+          ${u.business_logo ? `<img src="${u.business_logo}" alt="logo" class="max-h-full max-w-full object-contain">` : `<span class="text-xs text-slate-400">No logo</span>`}
+        </div>
+        <div class="flex flex-col gap-2 items-start">
+          <input id="logoInput" type="file" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml" onchange="uploadLogo(this)" class="text-sm">
+          ${u.business_logo ? `<button type="button" onclick="removeLogo()" class="text-sm text-rose-600 hover:bg-rose-50 px-2 py-1 rounded">Remove logo</button>` : ''}
+        </div>
+      </div>
+      <p class="text-xs text-slate-400 mt-2">PNG, JPG, GIF, WEBP or SVG · up to ~500KB.</p>
+    </div>` : `
+    <div class="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm mt-6 max-w-lg">
+      <div class="flex items-start justify-between gap-4">
+        <div>
+          <h3 class="font-semibold">Business logo <span class="text-xs font-bold bg-brand-light text-brand px-2 py-0.5 rounded ml-1">PRO</span></h3>
+          <p class="text-sm text-slate-500 mt-1">Add your logo to invoices and emails. Available on Pro.</p>
+        </div>
+        <a href="#/upgrade" class="shrink-0 bg-brand hover:bg-brand-dark text-white font-semibold px-4 py-2 rounded-lg text-sm">Upgrade</a>
+      </div>
+    </div>`}
+
     <div class="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm mt-6 max-w-lg">
       <h3 class="font-semibold">Plan</h3>
       <p class="text-sm text-slate-500 mt-1">You are on the <b>${u.plan === 'pro' ? 'Pro' : 'Free'}</b> plan.</p>
@@ -623,6 +709,26 @@ async function cancelPlan() {
   try { await API.post('/api/billing/cancel'); state.user.plan = 'free'; toast('Subscription canceled', 'success'); renderSettings(); }
   catch (e) { toast(e.message, 'error'); }
 }
+async function uploadLogo(input) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  if (file.size > 500000) { toast('Image too large (max ~500KB)', 'error'); input.value = ''; return; }
+  const reader = new FileReader();
+  reader.onload = async () => {
+    try {
+      const data = await API.put('/api/auth/me', { business_logo: reader.result });
+      state.user = data.user; toast('Logo saved', 'success'); renderSettings();
+    } catch (err) {
+      if (err.data && err.data.upgrade) { toast(err.message, 'error'); setTimeout(() => go('/upgrade'), 800); }
+      else toast(err.message, 'error');
+    }
+  };
+  reader.readAsDataURL(file);
+}
+async function removeLogo() {
+  try { const data = await API.put('/api/auth/me', { business_logo: '' }); state.user = data.user; toast('Logo removed', 'success'); renderSettings(); }
+  catch (e) { toast(e.message, 'error'); }
+}
 
 /* ---------------- Upgrade ---------------- */
 function renderUpgrade() {
@@ -633,7 +739,7 @@ function renderUpgrade() {
       <div class="bg-white rounded-2xl border border-slate-200 p-8 shadow-sm mt-6 text-left">
         <div class="text-4xl font-extrabold">$12<span class="text-base font-medium text-slate-400">/mo</span></div>
         <ul class="mt-5 space-y-2 text-sm text-slate-600">
-          <li>✓ Unlimited invoices</li><li>✓ Unlimited clients</li><li>✓ Shareable invoice links & PDF</li><li>✓ Revenue dashboard</li><li>✓ Priority support</li>
+          <li>✓ Unlimited invoices & clients</li><li>✓ Custom logo on invoices</li><li>✓ Full revenue dashboard & reports</li><li>✓ Shareable links & PDF</li><li>✓ Priority support</li>
         </ul>
         <button onclick="startCheckout()" class="w-full mt-6 bg-brand hover:bg-brand-dark text-white font-semibold py-3 rounded-xl">Upgrade now</button>
         ${state.billingLive ? '' : '<p class="text-xs text-slate-400 mt-3 text-center">Demo mode: upgrade is instant and free (no Stripe key configured).</p>'}
@@ -657,12 +763,21 @@ async function startCheckout() {
 Object.assign(window, {
   logout, setStatus, deleteInvoice, copyShare, sendInvoice, addItem, removeItem, itemChange, recalc,
   clientForm, closeModal, deleteClient, cancelPlan, startCheckout,
+  checkVerified, resendVerification, uploadLogo, removeLogo,
 });
 
 // handle ?upgraded=1 redirect from Stripe
 if (location.search.includes('upgraded=1')) {
   history.replaceState({}, '', location.pathname);
   setTimeout(() => toast('Payment successful — welcome to Pro! 🎉', 'success'), 400);
+}
+// handle ?verified=1/0 redirect from the email verification link
+if (location.search.includes('verified=1')) {
+  history.replaceState({}, '', location.pathname);
+  setTimeout(() => toast('Email verified — you’re all set!', 'success'), 400);
+} else if (location.search.includes('verified=0')) {
+  history.replaceState({}, '', location.pathname);
+  setTimeout(() => toast('That verification link was invalid or expired.', 'error'), 400);
 }
 
 boot();
